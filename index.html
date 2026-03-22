@@ -787,7 +787,7 @@ body {
   font-size: 14px;
   font-weight: 300;
   line-height: 1.5;
-  color: var(--color-grey-13);
+  color: #666666;
   text-align: center;
   max-width: 340px;
 }
@@ -1240,6 +1240,7 @@ body {
   let currentAnswer = null;
   let calcTimer = null;
   let pkgCount = 1;
+  let currentState = 'locked';
 
   function selectAnswer(answer) {
     currentAnswer = answer;
@@ -1262,15 +1263,15 @@ body {
 
     if (numPkgs > 1) {
       if (fromTyping) {
-        // Debounce: 2s idle after user stops typing → calculating → error
+        // User started typing — hide quote, debounce 2s → calculating → error
         showState('locked');
         calcTimer = setTimeout(() => {
           showState('calculating');
           calcTimer = setTimeout(() => showState('multi'), 1800);
         }, 2000);
       } else {
-        // Structural change (add/remove package, answer change) — just stay locked
-        showState('locked');
+        // Structural change (add/remove package) — preserve calculated if showing, else locked
+        if (currentState !== 'calculated') showState('locked');
       }
       return;
     }
@@ -1309,6 +1310,7 @@ body {
   }
 
   function showState(state) {
+    currentState = state;
     document.getElementById('state-locked').classList.toggle('hidden',      state !== 'locked');
     document.getElementById('state-calculating').classList.toggle('hidden', state !== 'calculating');
     document.getElementById('state-calculated').classList.toggle('hidden',  state !== 'calculated');
