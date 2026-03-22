@@ -1458,16 +1458,19 @@ body {
       </div>`;
     document.getElementById('packages-container').appendChild(wrap);
     renumberPackages();
-    checkDimensions();
+    // Don't recalculate — new package is empty, right panel is unchanged
   }
 
   function removePackage(n) {
     const el = document.getElementById(`pkg-wrap-${n}`);
-    if (el) {
-      el.remove();
-      renumberPackages();
-      checkDimensions();
-    }
+    if (!el) return;
+    const hadData = Array.from(el.querySelectorAll('input[type="number"]'))
+      .some(inp => parseFloat(inp.value) > 0);
+    el.remove();
+    renumberPackages();
+    // Only recalculate if the removed package had data (right panel may change)
+    // If it was empty, the right panel is unchanged — no loading state needed
+    if (hadData) checkDimensions();
   }
 </script>
 
