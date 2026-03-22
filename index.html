@@ -1261,33 +1261,36 @@ body {
     // Step 1 must always be answered first
     if (!currentAnswer) { showState('locked'); return; }
 
-    if (numPkgs > 1) {
-      if (fromTyping) {
-        // Check if all fields across all packages are filled
-        const allFilled = pkgWraps.every(wrap => {
-          return Array.from(wrap.querySelectorAll('input[type="number"]'))
-            .every(inp => parseFloat(inp.value) > 0);
-        });
+    // Packages that have at least one field with a value entered
+    const pkgsWithData = pkgWraps.filter(wrap =>
+      Array.from(wrap.querySelectorAll('input[type="number"]')).some(inp => parseFloat(inp.value) > 0)
+    );
 
+    if (numPkgs > 1 && pkgsWithData.length > 1) {
+      // Multiple packages have data — multi-package flow
+      if (fromTyping) {
+        const allFilled = pkgsWithData.every(wrap =>
+          Array.from(wrap.querySelectorAll('input[type="number"]')).every(inp => parseFloat(inp.value) > 0)
+        );
         if (allFilled) {
-          // All fields done — start calculating immediately
+          // All fields filled — start calculating immediately
           showState('calculating');
           calcTimer = setTimeout(() => showState('multi'), 1800);
         } else {
-          // Not all filled — 2s debounce; quote stays visible until timer fires
+          // Partial data — 2s debounce, existing quote stays visible
           calcTimer = setTimeout(() => {
             showState('calculating');
             calcTimer = setTimeout(() => showState('multi'), 1800);
           }, 2000);
         }
       } else {
-        // Structural change (add/remove package) — preserve calculated if showing, else locked
+        // Structural change — preserve calculated if showing, else locked
         if (currentState !== 'calculated') showState('locked');
       }
       return;
     }
 
-    // Single package — fire immediately once all 4 fields have values
+    // Single package with data (or additional packages are still empty — use pkg 1)
     const l  = parseFloat(document.getElementById('length-1').value)  || 0;
     const w  = parseFloat(document.getElementById('width-1').value)   || 0;
     const h  = parseFloat(document.getElementById('height-1').value)  || 0;
