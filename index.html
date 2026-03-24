@@ -2481,14 +2481,10 @@ body {
 
       <!-- ── STATE: Parcel ── -->
       <div id="state-parcel" class="hidden">
-        <div class="quotes-panel" id="parcel-panel-wrap">
-          <div class="quotes-panel-header" id="parcel-panel-header" style="border-bottom:none">
-            <div class="quotes-title active" id="parcel-panel-title">1stDibs Parcel Self Service</div>
-            <div class="quotes-subtitle" id="parcel-panel-subtitle">Quotes are generated automatically once package details are entered.</div>
-          </div>
-          <div id="parcel-no-pack-notice" class="quotes-locked-body hidden">
-            <img src="alert in circle.svg" alt="" width="45" height="45">
-            <p class="quotes-error-text">Shipping quotes cannot be automatically generated.<br><br>You can request a quote from 1stDibs for a specific customer or order later. You also have the option of quoting and facilitating your own shipping.</p>
+        <div class="quotes-panel">
+          <div class="quotes-panel-header" style="border-bottom:none">
+            <div class="quotes-title active">1stDibs Parcel Self Service</div>
+            <div class="quotes-subtitle">Quotes are generated automatically once package details are entered.</div>
           </div>
         </div>
         <!-- US -->
@@ -2814,9 +2810,10 @@ body {
 
     // Preserve manual quote modifications — don't navigate away regardless of step 1/2 changes
     if (currentState === 'parcel' && hasModifiedParcelQuotes()) {
-      // Seller switched to "cannot pack" — show error inline, keep seller-set cards in place
+      // Seller switched to "cannot pack" — migrate seller-set parcel quotes to custom cards, show error state
       if (currentAnswer === 'no') {
-        applyNoPackParcelMode();
+        migrateSellerParcelQuotesToCustomCards();
+        showState('multi');
         return;
       }
       // Find first fully-filled package dimensions
@@ -3130,7 +3127,6 @@ body {
   function closeQuoteModal() {
     document.getElementById('quote-modal-overlay').classList.add('hidden');
     editingCard = null;
-    editingParcelNoPackRegion = null;
   }
 
   function checkModalSave() {
@@ -3151,28 +3147,9 @@ body {
     const daysFrom = document.getElementById('modal-days-from').value;
     const daysTo   = document.getElementById('modal-days-to').value;
 
-    // Editing a parcel card in no-pack mode — save back to parcelData, not custom-quotes-list
-    if (editingParcelNoPackRegion) {
-      const r = editingParcelNoPackRegion;
-      editingParcelNoPackRegion = null;
-      parcelData[r].method       = method;
-      parcelData[r].customPrice  = price;
-      parcelData[r].customTimeLo = daysFrom;
-      parcelData[r].customTimeHi = daysTo;
-      // If price is 0, treat as Free Shipping
-      parcelData[r].quoteType = price === 0 ? 'Free Shipping' : 'Flat Rate';
-      const displayMethod = method.replace(/\s*\([^)]*\)$/, '').trim();
-      document.getElementById(`parcel-${r}-method`).textContent = displayMethod;
-      document.getElementById(`parcel-${r}-time`).textContent   = `${daysFrom}-${daysTo} days`;
-      document.getElementById(`parcel-${r}-price`).innerHTML    = price === 0
-        ? '<strong>$0.00</strong>'
-        : `<strong>$${price.toFixed(2)}</strong>`;
-      document.getElementById(`parcel-${r}-quote-label`).textContent = parcelData[r].quoteType;
-      closeQuoteModal();
-      return;
-    }
-
+    const quoteType = price === 0 ? 'Free Shipping' : 'Flat Rate';
     const displayMethod = method.replace(/\s*\([^)]*\)$/, '').trim();
+    const priceDisplay = price === 0 ? '<strong>$0.00</strong>' : `<strong>$${price.toFixed(2)}</strong>`;
     const cardHTML = `
       <div class="custom-quote-header">
         <div class="region-name" style="margin-bottom:0">
@@ -3200,18 +3177,35 @@ body {
         </div>
         <div>
           <div class="region-col-label">Buyer Will Pay</div>
-          <div class="region-col-value"><strong>$${price.toFixed(2)}</strong></div>
-          <div class="region-col-sub">Flat Rate</div>
+          <div class="region-col-value">${priceDisplay}</div>
+          <div class="region-col-sub">${quoteType}</div>
         </div>
       </div>`;
 
     if (editingCard) {
+      const migratedKey = editingCard.dataset.migratedFromParcel;
       editingCard.innerHTML = cardHTML;
       editingCard.dataset.location = location;
       editingCard.dataset.method   = method;
       editingCard.dataset.price    = price;
       editingCard.dataset.daysFrom = daysFrom;
       editingCard.dataset.daysTo   = daysTo;
+      // If editing a migrated card, update parcelData and preserve the migration tag
+      if (migratedKey) {
+        editingCard.dataset.migratedFromParcel = migratedKey;
+        const [region, methodType] = migratedKey.split('-');
+        if (methodType === 'standard') {
+          parcelData[region].quoteType    = quoteType;
+          parcelData[region].customPrice  = price;
+          parcelData[region].customTimeLo = daysFrom;
+          parcelData[region].customTimeHi = daysTo;
+        } else {
+          parcelData[region].expressQuoteType      = quoteType;
+          parcelData[region].expressCustomPrice    = price;
+          parcelData[region].expressCustomTimeLo   = daysFrom;
+          parcelData[region].expressCustomTimeHi   = daysTo;
+        }
+      }
       editingCard = null;
     } else {
       const card = document.createElement('div');
@@ -3264,12 +3258,45 @@ body {
   }
 
   function deleteFromModal() {
-    if (editingCard) editingCard.remove();
+    if (editingCard) {
+      const migratedKey = editingCard.dataset.migratedFromParcel;
+      if (migratedKey) {
+        const [region, methodType] = migratedKey.split('-');
+        if (methodType === 'standard') {
+          parcelData[region].quoteType = '1stDibs Quote';
+          delete parcelData[region].customPrice;
+          delete parcelData[region].customTimeLo;
+          delete parcelData[region].customTimeHi;
+        } else {
+          parcelData[region].expressQuoteType = '1stDibs Quote';
+          delete parcelData[region].expressCustomPrice;
+          delete parcelData[region].expressCustomTimeLo;
+          delete parcelData[region].expressCustomTimeHi;
+        }
+      }
+      editingCard.remove();
+    }
     closeQuoteModal();
   }
 
   function deleteQuote(btn) {
-    btn.closest('.custom-quote-card').remove();
+    const card = btn.closest('.custom-quote-card');
+    const migratedKey = card.dataset.migratedFromParcel;
+    if (migratedKey) {
+      const [region, methodType] = migratedKey.split('-');
+      if (methodType === 'standard') {
+        parcelData[region].quoteType = '1stDibs Quote';
+        delete parcelData[region].customPrice;
+        delete parcelData[region].customTimeLo;
+        delete parcelData[region].customTimeHi;
+      } else {
+        parcelData[region].expressQuoteType = '1stDibs Quote';
+        delete parcelData[region].expressCustomPrice;
+        delete parcelData[region].expressCustomTimeLo;
+        delete parcelData[region].expressCustomTimeHi;
+      }
+    }
+    card.remove();
   }
 
   // Close modal on overlay click
@@ -3400,116 +3427,12 @@ body {
 
   // ── Parcel logic ───────────────────────────────────────────────────
   let parcelData = {
-    us:  { name: 'United States',    method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
-    eu:  { name: 'Europe',           method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
-    row: { name: 'Rest of the World',method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
+    us:  { name: 'United States',    method: 'DHL Standard Parcel (5-14 Days)', expressMethod: 'DHL Express Parcel (1-3 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
+    eu:  { name: 'Europe',           method: 'DHL Standard Parcel (5-14 Days)', expressMethod: 'DHL Express Parcel (1-3 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
+    row: { name: 'Rest of the World',method: 'DHL Standard Parcel (5-14 Days)', expressMethod: 'DHL Express Parcel (1-3 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
   };
   let editingParcelRegion = null;
   let parcelEditChanged = false;
-  let editingParcelNoPackRegion = null;
-  let noPackModeActive = false;
-  let noPackSavedExpressState = {}; // saves express-row visibility per region before no-pack
-
-  function applyNoPackParcelMode() {
-    noPackModeActive = true;
-    document.getElementById('parcel-panel-header').style.borderBottom = '1px solid var(--color-border)';
-    document.getElementById('parcel-panel-title').textContent    = 'Shipping Quotes';
-    document.getElementById('parcel-panel-subtitle').textContent = 'Shipping quotes cannot be automatically generated.';
-    document.getElementById('parcel-no-pack-notice').classList.remove('hidden');
-
-    ['us', 'eu', 'row'].forEach(r => {
-      // Only show cards where seller set the STANDARD quote; hide everything else
-      const hasSellerStandard = parcelData[r].quoteType !== '1stDibs Quote';
-      const card = document.getElementById(`parcel-card-${r}`);
-      card.classList.toggle('hidden', !hasSellerStandard);
-
-      if (hasSellerStandard) {
-        // Save and hide the express row (always hidden in no-pack — one method per card)
-        const expResolved = document.getElementById(`parcel-express-resolved-${r}`);
-        noPackSavedExpressState[r] = !expResolved.classList.contains('hidden');
-        document.getElementById(`parcel-divider-${r}`).classList.add('hidden');
-        document.getElementById(`parcel-express-loading-${r}`).classList.add('hidden');
-        expResolved.classList.add('hidden');
-        document.getElementById(`parcel-add-${r}`).classList.add('hidden');
-        document.getElementById(`parcel-remove-${r}`).classList.add('hidden');
-
-        // Swap meatball to quote-card behaviour: Edit + Delete
-        card.querySelector('.meatball-popover').innerHTML = `
-          <div class="popover-option" onclick="editParcelCardAsQuote('${r}')">Edit</div>
-          <div class="popover-option danger" onclick="deleteParcelCardQuote('${r}')">Delete</div>`;
-      }
-    });
-    showState('parcel');
-  }
-
-  function clearNoPackParcelMode() {
-    if (!noPackModeActive) return;
-    noPackModeActive = false;
-    document.getElementById('parcel-panel-header').style.borderBottom = 'none';
-    document.getElementById('parcel-panel-title').textContent    = '1stDibs Parcel Self Service';
-    document.getElementById('parcel-panel-subtitle').textContent = 'Quotes are generated automatically once package details are entered.';
-    document.getElementById('parcel-no-pack-notice').classList.add('hidden');
-
-    ['us', 'eu', 'row'].forEach(r => {
-      document.getElementById(`parcel-card-${r}`).classList.remove('hidden');
-      // Restore express row visibility from saved state
-      const wasExpressShown = !!noPackSavedExpressState[r];
-      document.getElementById(`parcel-express-resolved-${r}`).classList.toggle('hidden', !wasExpressShown);
-      document.getElementById(`parcel-divider-${r}`).classList.toggle('hidden', !wasExpressShown);
-      document.getElementById(`parcel-add-${r}`).classList.toggle('hidden', wasExpressShown);
-      document.getElementById(`parcel-remove-${r}`).classList.toggle('hidden', !wasExpressShown);
-      // Restore meatball to parcel-card behaviour: Edit only
-      document.getElementById(`parcel-card-${r}`).querySelector('.meatball-popover').innerHTML =
-        `<div class="popover-option" onclick="openParcelEditModal('${r}')">Edit</div>`;
-    });
-    noPackSavedExpressState = {};
-  }
-
-  function editParcelCardAsQuote(region) {
-    editingParcelNoPackRegion = region;
-    const d = parcelData[region];
-    populateMethodOptions(); // parcel methods, no 1stDibs Quote type option
-
-    // Pre-fill location (locked to this region)
-    const locEl = document.getElementById('modal-location-select');
-    locEl.querySelectorAll('.custom-select-option').forEach(o => {
-      const match = o.textContent.trim() === d.name;
-      o.classList.toggle('active', match);
-      if (match) locEl.querySelector('.custom-select-value').textContent = o.textContent;
-    });
-    locEl.classList.remove('open');
-
-    // Pre-fill method (match on stripped name)
-    const methodEl = document.getElementById('modal-method-select');
-    const strippedSaved = d.method.replace(/\s*\([^)]*\)$/, '').trim();
-    let matched = false;
-    methodEl.querySelectorAll('.custom-select-option').forEach(o => {
-      const strippedOpt = o.textContent.replace(/\s*\([^)]*\)$/, '').trim();
-      const match = strippedOpt === strippedSaved;
-      o.classList.toggle('active', match);
-      if (match) { methodEl.querySelector('.custom-select-value').textContent = o.textContent; matched = true; }
-    });
-    if (!matched) methodEl.querySelector('.custom-select-value').textContent = '';
-    methodEl.classList.remove('open');
-
-    document.getElementById('modal-price').value     = d.quoteType === 'Free Shipping' ? '0' : (d.customPrice != null ? d.customPrice : '');
-    document.getElementById('modal-days-from').value = d.customTimeLo || '';
-    document.getElementById('modal-days-to').value   = d.customTimeHi || '';
-    document.getElementById('modal-title').textContent    = 'Edit Shipping Quote';
-    document.getElementById('modal-save-btn').textContent = 'Update';
-    document.getElementById('modal-delete-btn').classList.remove('visible');
-    checkModalSave();
-    document.getElementById('quote-modal-overlay').classList.remove('hidden');
-  }
-
-  function deleteParcelCardQuote(region) {
-    // Reset region to 1stDibs Quote and hide card (no seller quote to show in no-pack mode)
-    parcelData[region].quoteType = '1stDibs Quote';
-    delete parcelData[region].customPrice;
-    delete parcelData[region].customTimeLo;
-    delete parcelData[region].customTimeHi;
-    document.getElementById(`parcel-card-${region}`).classList.add('hidden');
-  }
 
   function hasModifiedParcelQuotes() {
     const anyRegionModified = Object.values(parcelData).some(d =>
@@ -3539,7 +3462,7 @@ body {
         </div>
       </div>`;
 
-    function makeCard(name, method, quoteType, price, timeLo, timeHi) {
+    function makeCard(regionKey, methodType, name, method, quoteType, price, timeLo, timeHi) {
       const card = document.createElement('div');
       card.className = 'custom-quote-card';
       card.dataset.location = name;
@@ -3547,6 +3470,7 @@ body {
       card.dataset.price    = price;
       card.dataset.daysFrom = timeLo;
       card.dataset.daysTo   = timeHi;
+      card.dataset.migratedFromParcel = `${regionKey}-${methodType}`;
       const priceDisplay = quoteType === 'Free Shipping'
         ? '<strong>$0.00</strong>'
         : `<strong>$${parseFloat(price).toFixed(2)}</strong>`;
@@ -3577,25 +3501,27 @@ body {
       return card;
     }
 
+    const list = document.getElementById('custom-quotes-list');
     ['us', 'eu', 'row'].forEach(r => {
       const d = parcelData[r];
-      if (d.quoteType !== '1stDibs Quote') {
+      // Skip if a migrated card for this region already exists (avoid duplicates)
+      const existingStd = list.querySelector(`[data-migrated-from-parcel="${r}-standard"]`);
+      const existingExp = list.querySelector(`[data-migrated-from-parcel="${r}-express"]`);
+      if (d.quoteType !== '1stDibs Quote' && !existingStd) {
         const price = d.quoteType === 'Free Shipping' ? 0 : (d.customPrice || 0);
-        document.getElementById('custom-quotes-list').appendChild(
-          makeCard(d.name, d.method, d.quoteType, price, d.customTimeLo || '1', d.customTimeHi || '14')
-        );
-        d.quoteType = '1stDibs Quote';
-        delete d.customPrice; delete d.customTimeLo; delete d.customTimeHi;
+        list.appendChild(makeCard(r, 'standard', d.name, d.method, d.quoteType, price, d.customTimeLo || '1', d.customTimeHi || '14'));
       }
-      if (d.expressQuoteType && d.expressQuoteType !== '1stDibs Quote') {
+      if (d.expressQuoteType && d.expressQuoteType !== '1stDibs Quote' && !existingExp) {
         const price = d.expressQuoteType === 'Free Shipping' ? 0 : (d.expressCustomPrice || 0);
-        document.getElementById('custom-quotes-list').appendChild(
-          makeCard(`${d.name} (Express)`, d.method, d.expressQuoteType, price, d.expressCustomTimeLo || '1', d.expressCustomTimeHi || '3')
-        );
-        d.expressQuoteType = '1stDibs Quote';
-        delete d.expressCustomPrice; delete d.expressCustomTimeLo; delete d.expressCustomTimeHi;
+        const expMethod = d.expressMethod || 'DHL Express Parcel (1-3 Days)';
+        list.appendChild(makeCard(r, 'express', d.name, expMethod, d.expressQuoteType, price, d.expressCustomTimeLo || '1', d.expressCustomTimeHi || '3'));
       }
     });
+  }
+
+  function removeMigratedParcelCards() {
+    document.querySelectorAll('#custom-quotes-list .custom-quote-card[data-migrated-from-parcel]')
+      .forEach(card => card.remove());
   }
 
   function isParcel(l, w, h, wt) {
@@ -3603,7 +3529,7 @@ body {
   }
 
   function updateParcelQuotes(l, w, h, wt) {
-    clearNoPackParcelMode();
+    removeMigratedParcelCards();
     const r5 = v => Math.round(v / 5) * 5;
 
     // Determine shipping origin from selected inventory location
@@ -3891,6 +3817,7 @@ body {
     }
     const group2Visible = !document.getElementById('parcel-method-group-2').classList.contains('hidden');
     if (group2Visible) {
+      parcelData[r].expressMethod    = document.getElementById('parcel-edit-method-2-select').querySelector('.custom-select-value').textContent;
       parcelData[r].expressQuoteType = document.getElementById('parcel-edit-quote-2-select').querySelector('.custom-select-value').textContent;
       const qt2 = parcelData[r].expressQuoteType;
       if (qt2 === 'Flat Rate') {
