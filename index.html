@@ -1702,6 +1702,9 @@ body {
   gap: 4px var(--sp-18);
   padding: 0 var(--sp-18);
 }
+.parcel-card-cols--last {
+  padding-bottom: var(--sp-18);
+}
 .add-method-link {
   display: block;
   padding: var(--sp-9) var(--sp-18) var(--sp-18);
@@ -2307,7 +2310,7 @@ body {
               United States
             </div>
           </div>
-          <div class="parcel-card-cols" style="padding-bottom:var(--sp-18)">
+          <div class="parcel-card-cols parcel-card-cols--last">
             <div>
               <div class="region-col-label">Shipping Method</div>
               <div class="region-col-value dots calculating-dots">•••</div>
@@ -2330,7 +2333,7 @@ body {
               Europe
             </div>
           </div>
-          <div class="parcel-card-cols" style="padding-bottom:var(--sp-18)">
+          <div class="parcel-card-cols parcel-card-cols--last">
             <div>
               <div class="region-col-label">Shipping Method</div>
               <div class="region-col-value dots calculating-dots">•••</div>
@@ -2353,7 +2356,7 @@ body {
               Rest of the World
             </div>
           </div>
-          <div class="parcel-card-cols" style="padding-bottom:var(--sp-18)">
+          <div class="parcel-card-cols parcel-card-cols--last">
             <div>
               <div class="region-col-label">Shipping Method</div>
               <div class="region-col-value dots calculating-dots">•••</div>
@@ -2809,7 +2812,7 @@ body {
     if (!currentAnswer) { showState('locked'); return; }
 
     // Preserve manual quote modifications — don't navigate away regardless of step 1/2 changes
-    if (currentState === 'parcel' && hasModifiedParcelQuotes()) {
+    if ((currentState === 'parcel' || currentState === 'parcel-loading') && hasModifiedParcelQuotes()) {
       // Find first fully-filled package dimensions
       const pkgWrapsAll = Array.from(document.querySelectorAll('#packages-container .pkg-wrap'));
       let fl = 0, fw = 0, fh = 0, fwt = 0;
