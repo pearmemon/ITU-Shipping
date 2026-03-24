@@ -2463,11 +2463,11 @@ body {
         <div class="quotes-panel">
           <div class="quotes-panel-header">
             <div class="quotes-title active">Shipping Quotes</div>
-            <div class="quotes-subtitle">Smart Quotes cannot be automatically generated for multiple packages.</div>
+            <div class="quotes-subtitle">Shipping quotes cannot be automatically generated.</div>
           </div>
           <div class="quotes-locked-body">
             <img src="alert in circle.svg" alt="" width="45" height="45">
-            <p class="quotes-error-text">We weren't able to generate a quote based on your packing specifications.<br><br>You can request a quote from 1stDibs for a specific customer or order later. You also have the option of quoting and facilitating your own shipping.</p>
+            <p class="quotes-error-text">Shipping quotes cannot be automatically generated.<br><br>You can request a quote from 1stDibs for a specific customer or order later. You also have the option of quoting and facilitating your own shipping.</p>
           </div>
         </div>
       </div>
@@ -2805,6 +2805,24 @@ body {
     // Step 1 must always be answered first
     if (!currentAnswer) { showState('locked'); return; }
 
+    // Preserve manual quote modifications — don't navigate away regardless of step 1/2 changes
+    if (currentState === 'parcel' && hasModifiedParcelQuotes()) {
+      const l = parseFloat(document.getElementById('length-1').value)  || 0;
+      const w = parseFloat(document.getElementById('width-1').value)   || 0;
+      const h = parseFloat(document.getElementById('height-1').value)  || 0;
+      const wt = parseFloat(document.getElementById('weight-1').value) || 0;
+      if (l > 0 && w > 0 && h > 0 && wt > 0 && isParcel(l, w, h, wt)) updateParcelQuotes(l, w, h, wt);
+      return;
+    }
+    if (currentState === 'calculated' && hasModifiedFreightQuotes()) {
+      const l = parseFloat(document.getElementById('length-1').value)  || 0;
+      const w = parseFloat(document.getElementById('width-1').value)   || 0;
+      const h = parseFloat(document.getElementById('height-1').value)  || 0;
+      const wt = parseFloat(document.getElementById('weight-1').value) || 0;
+      if (l > 0 && w > 0 && h > 0 && wt > 0) updatePrices(l, w, h, wt, true);
+      return;
+    }
+
     // Packages that have at least one field with a value entered
     const pkgsWithData = pkgWraps.filter(wrap =>
       Array.from(wrap.querySelectorAll('input[type="number"]')).some(inp => parseFloat(inp.value) > 0)
@@ -2841,6 +2859,22 @@ body {
         return defaultLoading; // mixed — use first-filled type
       }
       if (fromTyping) {
+        // Parcel + can pack: generate quote from first fully-filled package
+        if (currentAnswer === 'yes') {
+          const firstFilled = pkgsWithData.find(wrap =>
+            Array.from(wrap.querySelectorAll('input[type="number"]')).every(inp => parseFloat(inp.value) > 0)
+          );
+          if (firstFilled) {
+            const inputs = Array.from(firstFilled.querySelectorAll('input[type="number"]')).slice(0, 4);
+            const [fl, fw, fh, fwt] = inputs.map(i => parseFloat(i.value) || 0);
+            if (isParcel(fl, fw, fh, fwt)) {
+              showState('parcel-loading');
+              calcTimer = setTimeout(() => updateParcelQuotes(fl, fw, fh, fwt), 1800);
+              return;
+            }
+          }
+        }
+        // Freight multi-package or parcel + cannot pack → error
         const allFilled = pkgsWithData.every(wrap =>
           Array.from(wrap.querySelectorAll('input[type="number"]')).every(inp => parseFloat(inp.value) > 0)
         );
@@ -2889,7 +2923,7 @@ body {
     }
   }
 
-  function updatePrices(l, w, h, wt) {
+  function updatePrices(l, w, h, wt, keepInHome = false) {
     const dimWt   = (l * w * h) / 139;
     const billable = Math.max(wt, dimWt);
     const base = Math.max(50, billable * 0.38);
@@ -2904,7 +2938,7 @@ body {
     document.getElementById('eu-price').innerHTML  = `<strong>${fmt(euLo)}-${fmt(euHi)}</strong>`;
     document.getElementById('row-price').innerHTML = `<strong>${fmt(rowLo)}-${fmt(rowHi)}</strong>`;
     currentPrices = { usLo: lo, usHi: hi, euLo, euHi, rowLo, rowHi };
-    resetInHome();
+    if (!keepInHome) resetInHome();
   }
 
   function resetInHome() {
@@ -3286,12 +3320,28 @@ body {
 
   // ── Parcel logic ───────────────────────────────────────────────────
   let parcelData = {
-    us:  { name: 'United States',    method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', price: '$50-$100' },
-    eu:  { name: 'Europe',           method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', price: '$50-$100' },
-    row: { name: 'Rest of the World',method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', price: '$50-$100' },
+    us:  { name: 'United States',    method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
+    eu:  { name: 'Europe',           method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
+    row: { name: 'Rest of the World',method: 'DHL Standard Parcel (5-14 Days)', time: '5-14 days', quoteType: '1stDibs Quote', expressQuoteType: '1stDibs Quote', price: '$50-$100' },
   };
   let editingParcelRegion = null;
   let parcelEditChanged = false;
+
+  function hasModifiedParcelQuotes() {
+    const anyRegionModified = Object.values(parcelData).some(d =>
+      d.quoteType !== '1stDibs Quote' || d.expressQuoteType !== '1stDibs Quote'
+    );
+    const hasCustomCards = document.getElementById('custom-quotes-list').children.length > 0;
+    return anyRegionModified || hasCustomCards;
+  }
+
+  function hasModifiedFreightQuotes() {
+    const anyInHome = ['us', 'eu', 'row'].some(r =>
+      !document.getElementById(`${r}-inhome-result`).classList.contains('hidden')
+    );
+    const hasCustomCards = document.getElementById('custom-quotes-list').children.length > 0;
+    return anyInHome || hasCustomCards;
+  }
 
   function isParcel(l, w, h, wt) {
     return wt < 150;
@@ -3567,6 +3617,10 @@ body {
     if (!r) return;
     parcelData[r].method    = document.getElementById('parcel-edit-method-select').querySelector('.custom-select-value').textContent;
     parcelData[r].quoteType = document.getElementById('parcel-edit-quote-select').querySelector('.custom-select-value').textContent;
+    const group2Visible = !document.getElementById('parcel-method-group-2').classList.contains('hidden');
+    if (group2Visible) {
+      parcelData[r].expressQuoteType = document.getElementById('parcel-edit-quote-2-select').querySelector('.custom-select-value').textContent;
+    }
     // Re-render the card
     const shortMethod = parcelData[r].method.length > 18 ? parcelData[r].method.slice(0, 16) + '...' : parcelData[r].method;
     document.getElementById(`parcel-${r}-method`).textContent     = shortMethod;
