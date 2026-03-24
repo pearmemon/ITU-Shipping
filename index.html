@@ -2810,12 +2810,6 @@ body {
 
     // Preserve manual quote modifications — don't navigate away regardless of step 1/2 changes
     if (currentState === 'parcel' && hasModifiedParcelQuotes()) {
-      // Seller switched to "cannot pack" — migrate seller-set parcel quotes to custom cards, show error state
-      if (currentAnswer === 'no') {
-        migrateSellerParcelQuotesToCustomCards();
-        showState('multi');
-        return;
-      }
       // Find first fully-filled package dimensions
       const pkgWrapsAll = Array.from(document.querySelectorAll('#packages-container .pkg-wrap'));
       let fl = 0, fw = 0, fh = 0, fwt = 0;
@@ -2823,6 +2817,18 @@ body {
         const inputs = Array.from(wrap.querySelectorAll('input[type="number"]')).slice(0, 4);
         const [pl, pw, ph, pwt] = inputs.map(i => parseFloat(i.value) || 0);
         if (pl > 0 && pw > 0 && ph > 0 && pwt > 0) { fl = pl; fw = pw; fh = ph; fwt = pwt; break; }
+      }
+      if (currentAnswer === 'no') {
+        // Seller cannot pack — migrate seller-set parcel quotes to custom cards
+        migrateSellerParcelQuotesToCustomCards();
+        // Freight quotes don't require packing: if dims qualify for freight, show freight smart quotes
+        if (fl > 0 && fw > 0 && fh > 0 && fwt > 0 && !isParcel(fl, fw, fh, fwt)) {
+          showState('calculating');
+          calcTimer = setTimeout(() => { updatePrices(fl, fw, fh, fwt); showState('calculated'); }, 1800);
+        } else {
+          showState('multi');
+        }
+        return;
       }
       if (fl > 0 && fw > 0 && fh > 0 && fwt > 0) {
         if (isParcel(fl, fw, fh, fwt)) {
@@ -2953,6 +2959,8 @@ body {
           }
         }, 1800);
       } else {
+        // Migrate any outstanding seller parcel quotes before generating freight smart quotes
+        migrateSellerParcelQuotesToCustomCards();
         showState('calculating');
         calcTimer = setTimeout(() => {
           updatePrices(l, w, h, wt);
