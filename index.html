@@ -2481,10 +2481,14 @@ body {
 
       <!-- ── STATE: Parcel ── -->
       <div id="state-parcel" class="hidden">
-        <div class="quotes-panel">
-          <div class="quotes-panel-header" style="border-bottom:none">
-            <div class="quotes-title active">1stDibs Parcel Self Service</div>
-            <div class="quotes-subtitle">Quotes are generated automatically once package details are entered.</div>
+        <div class="quotes-panel" id="parcel-panel-wrap">
+          <div class="quotes-panel-header" id="parcel-panel-header" style="border-bottom:none">
+            <div class="quotes-title active" id="parcel-panel-title">1stDibs Parcel Self Service</div>
+            <div class="quotes-subtitle" id="parcel-panel-subtitle">Quotes are generated automatically once package details are entered.</div>
+          </div>
+          <div id="parcel-no-pack-notice" class="quotes-locked-body hidden">
+            <img src="alert in circle.svg" alt="" width="45" height="45">
+            <p class="quotes-error-text">Shipping quotes cannot be automatically generated.<br><br>You can request a quote from 1stDibs for a specific customer or order later. You also have the option of quoting and facilitating your own shipping.</p>
           </div>
         </div>
         <!-- US -->
@@ -2810,10 +2814,9 @@ body {
 
     // Preserve manual quote modifications — don't navigate away regardless of step 1/2 changes
     if (currentState === 'parcel' && hasModifiedParcelQuotes()) {
-      // Seller switched to "cannot pack" — move their quotes to custom cards and show error
+      // Seller switched to "cannot pack" — show error inline, keep seller-set cards in place
       if (currentAnswer === 'no') {
-        migrateSellerParcelQuotesToCustomCards();
-        showState('multi');
+        applyNoPackParcelMode();
         return;
       }
       // Find first fully-filled package dimensions
@@ -3382,6 +3385,31 @@ body {
   let editingParcelRegion = null;
   let parcelEditChanged = false;
 
+  function applyNoPackParcelMode() {
+    // Show error notice inside the parcel panel
+    document.getElementById('parcel-panel-header').style.borderBottom = '1px solid var(--color-border)';
+    document.getElementById('parcel-panel-title').textContent    = 'Shipping Quotes';
+    document.getElementById('parcel-panel-subtitle').textContent = 'Shipping quotes cannot be automatically generated.';
+    document.getElementById('parcel-no-pack-notice').classList.remove('hidden');
+    // Hide 1stDibs regions; keep seller-set regions in place
+    ['us', 'eu', 'row'].forEach(r => {
+      const hasSellerQuote = parcelData[r].quoteType !== '1stDibs Quote'
+                          || (parcelData[r].expressQuoteType && parcelData[r].expressQuoteType !== '1stDibs Quote');
+      document.getElementById(`parcel-card-${r}`).classList.toggle('hidden', !hasSellerQuote);
+    });
+    showState('parcel');
+  }
+
+  function clearNoPackParcelMode() {
+    document.getElementById('parcel-panel-header').style.borderBottom = 'none';
+    document.getElementById('parcel-panel-title').textContent    = '1stDibs Parcel Self Service';
+    document.getElementById('parcel-panel-subtitle').textContent = 'Quotes are generated automatically once package details are entered.';
+    document.getElementById('parcel-no-pack-notice').classList.add('hidden');
+    ['us', 'eu', 'row'].forEach(r =>
+      document.getElementById(`parcel-card-${r}`).classList.remove('hidden')
+    );
+  }
+
   function hasModifiedParcelQuotes() {
     const anyRegionModified = Object.values(parcelData).some(d =>
       d.quoteType !== '1stDibs Quote' || d.expressQuoteType !== '1stDibs Quote'
@@ -3474,6 +3502,7 @@ body {
   }
 
   function updateParcelQuotes(l, w, h, wt) {
+    clearNoPackParcelMode();
     const r5 = v => Math.round(v / 5) * 5;
 
     // Determine shipping origin from selected inventory location
