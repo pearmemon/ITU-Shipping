@@ -2810,6 +2810,12 @@ body {
 
     // Preserve manual quote modifications — don't navigate away regardless of step 1/2 changes
     if (currentState === 'parcel' && hasModifiedParcelQuotes()) {
+      // Seller switched to "cannot pack" — move their quotes to custom cards and show error
+      if (currentAnswer === 'no') {
+        migrateSellerParcelQuotesToCustomCards();
+        showState('multi');
+        return;
+      }
       // Find first fully-filled package dimensions
       const pkgWrapsAll = Array.from(document.querySelectorAll('#packages-container .pkg-wrap'));
       let fl = 0, fw = 0, fh = 0, fwt = 0;
